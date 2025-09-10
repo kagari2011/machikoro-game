@@ -1,0 +1,420 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>街ころ — CPU対戦（シングルファイル）</title>
+<style>
+:root{--bg:#f4f7fb;--card:#fff;--accent:#2b90ff;--muted:#666}
+*{box-sizing:border-box}body{font-family:system-ui,-apple-system,'Segoe UI',Roboto,'Noto Sans JP',sans-serif;margin:0;background:var(--bg);color:#111}
+.container{max-width:960px;margin:18px auto;padding:16px}
+.header{display:flex;align-items:center;gap:12px;margin-bottom:12px}
+.logo{font-weight:800;font-size:20px}
+.grid{display:grid;grid-template-columns:1fr 360px;gap:16px}
+@media(max-width:900px){.grid{grid-template-columns:1fr}}
+.panel{background:var(--card);border-radius:10px;padding:12px;box-shadow:0 6px 18px rgba(20,30,60,0.06)}
+.board{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+.card{background:#fff;border:1px solid #e6eefc;border-radius:8px;padding:8px;min-height:60px;display:flex;flex-direction:column;justify-content:space-between}
+.card h4{margin:0;font-size:14px}
+.small{font-size:12px;color:var(--muted)}
+.controls{display:flex;flex-direction:column;gap:8px;margin-top:8px}
+.row{display:flex;gap:8px;align-items:center}
+.btn{padding:8px 12px;border-radius:8px;border:1px solid #cfdcfb;background:#fff;cursor:pointer}
+.btn.primary{background:var(--accent);color:#fff;border-color:var(--accent)}
+.btn.ghost{background:transparent}
+.status{display:flex;gap:8px;align-items:center;justify-content:space-between;margin-top:8px}
+.log{height:160px;overflow:auto;background:#fbfdff;border:1px solid #eef6ff;padding:8px;border-radius:6px;font-size:13px}
+.playerBox{display:flex;justify-content:space-between;align-items:center;padding:8px;border-radius:8px;border:1px solid #f0f0f0;background:#fff}
+.coins{font-weight:700;color:#222}
+.buildingsList{display:flex;flex-wrap:wrap;gap:6px;margin-top:6px}
+.buildingTag{padding:4px 6px;border-radius:6px;background:#f6fbff;border:1px solid #e6f0ff;font-size:12px}
+.footer{margin-top:14px;font-size:13px;color:var(--muted)}
+.legend{display:flex;gap:8px;flex-wrap:wrap;margin-top:8px}
+.legend .item{display:flex;align-items:center;gap:6px;font-size:12px;background:#fff;padding:6px;border-radius:6px;border:1px solid #f0f0f0}
+</style>
+</head>
+<body>
+<div class="container">
+  <div class="header">
+    <div class="logo">街ころ — CPU対戦（デモ）</div>
+    <div class="small">サイコロで街を育てよう</div>
+  </div>
+
+  <div class="grid">
+    <div class="panel">
+      <h3>場（建物一覧）</h3>
+      <div id="board" class="board" aria-live="polite"></div>
+
+      <div style="margin-top:12px">
+        <h4>ショップ（クリックで購入、ランドマークは建設）</h4>
+        <div id="shop" style="display:grid;grid-template-columns:repeat(2,1fr);gap:8px;margin-top:8px"></div>
+      </div>
+
+      <div class="legend">
+        <div class="item"><strong>ルール</strong>：最初にランドマーク4つをすべて建てたら勝ち</div>
+        <div class="item">駅を作ると2個ダイス</div>
+        <div class="item">ショッピングモールは飲食効果を+1</div>
+      </div>
+    </div>
+
+    <aside class="panel">
+      <div class="playerBox">
+        <div>
+          <div style="font-weight:700">あなた</div>
+          <div class="small">人間プレイヤー</div>
+        </div>
+        <div><span class="coins" id="playerCoins">0</span> コイン</div>
+      </div>
+
+      <div style="height:8px"></div>
+
+      <div class="playerBox">
+        <div>
+          <div style="font-weight:700">CPU</div>
+          <div class="small">自動プレイヤー</div>
+        </div>
+        <div><span class="coins" id="cpuCoins">0</span> コイン</div>
+      </div>
+
+      <div style="height:12px"></div>
+
+      <div class="controls">
+        <div class="row">
+          <button class="btn primary" id="startBtn">ゲーム開始</button>
+          <button class="btn" id="resetBtn">リセット</button>
+        </div>
+
+        <div class="row">
+          <button class="btn" id="rollBtn" disabled>サイコロを振る</button>
+          <button class="btn" id="endBtn" disabled>ターン終了</button>
+        </div>
+
+        <div class="row">
+          <div>出目：<span id="diceResult">-</span></div>
+        </div>
+
+        <div>
+          <div style="font-weight:700;margin-top:8px">あなたの建物</div>
+          <div id="playerBuildings" class="buildingsList"></div>
+        </div>
+        <div>
+          <div style="font-weight:700;margin-top:8px">あなたのランドマーク</div>
+          <div id="playerLandmarks" class="buildingsList"></div>
+        </div>
+      </div>
+
+      <h4 style="margin-top:12px">ログ</h4>
+      <div id="log" class="log" aria-live="polite"></div>
+
+      <div class="footer">
+        <div>使い方：<br>「ゲーム開始」→「サイコロを振る」→効果が自動処理されます。CPUも自動でプレイ。</div>
+      </div>
+    </aside>
+  </div>
+</div>
+
+<script>
+// --- ゲームデータ ---
+const DATA = {
+  buildings: [
+    {name:'農場', emoji:'🌾', dice:'1', type:'basic', cost:1, effect:'bank_gain', value:1},
+    {name:'カフェ', emoji:'☕', dice:'2-3', type:'basic', cost:2, effect:'steal', value:1},
+    {name:'パン屋', emoji:'🥐', dice:'3', type:'basic', cost:1, effect:'bank_gain', value:1},
+    {name:'森', emoji:'🌲', dice:'4', type:'basic', cost:3, effect:'bank_gain', value:2},
+    {name:'鉱山', emoji:'⛏', dice:'6', type:'basic', cost:6, effect:'bank_gain', value:5},
+    {name:'市場', emoji:'🛒', dice:'5', type:'special', cost:4, effect:'gain_from_all', value:1},
+    {name:'レストラン', emoji:'🍴', dice:'8', type:'special', cost:3, effect:'steal', value:2},
+    {name:'スタジアム', emoji:'⚽', dice:'9-10', type:'special', cost:6, effect:'gain_from_all', value:2}
+  ],
+  landmarks: [
+    {name:'市役所', emoji:'🏛', key:'town_hall', cost:4, effect:'if_zero_gain1'},
+    {name:'駅', emoji:'🚉', key:'station', cost:4, effect:'roll_two'},
+    {name:'遊園地', emoji:'🎡', key:'amusement_park', cost:10, effect:'double_extra_turn'},
+    {name:'ショッピングモール', emoji:'🏬', key:'mall', cost:12, effect:'food_plus1'}
+  ]
+};
+
+// --- ゲーム状態 ---
+let GAME = {
+  player: {coins:5, buildings:[], landmarks:{}, hasStation:false},
+  cpu: {coins:5, buildings:[], landmarks:{}, hasStation:false},
+  turn: 'player', // 'player' or 'cpu'
+  running:false
+};
+
+// init landmark flags
+DATA.landmarks.forEach(l=>{ GAME.player.landmarks[l.key]=false; GAME.cpu.landmarks[l.key]=false; });
+
+// --- UI ---
+const boardEl = document.getElementById('board');
+const shopEl = document.getElementById('shop');
+const logEl = document.getElementById('log');
+const playerCoinsEl = document.getElementById('playerCoins');
+const cpuCoinsEl = document.getElementById('cpuCoins');
+const playerBuildingsEl = document.getElementById('playerBuildings');
+const playerLandmarksEl = document.getElementById('playerLandmarks');
+const diceResultEl = document.getElementById('diceResult');
+
+const startBtn = document.getElementById('startBtn');
+const rollBtn = document.getElementById('rollBtn');
+const endBtn = document.getElementById('endBtn');
+const resetBtn = document.getElementById('resetBtn');
+
+function log(msg){ const d=document.createElement('div'); d.textContent = msg; logEl.prepend(d); }
+function renderBoard(){
+  boardEl.innerHTML='';
+  DATA.buildings.forEach(b=>{
+    const c=document.createElement('div'); c.className='card';
+    c.innerHTML = `<h4>${b.emoji} ${b.name}</h4><div class="small">目: ${b.dice}</div><div class="small">効果: ${b.effect} ${b.value||''}</div><div class="small">コスト: ${b.cost}</div>`;
+    boardEl.appendChild(c);
+  });
+  // landmarks
+  DATA.landmarks.forEach(l=>{
+    const c=document.createElement('div'); c.className='card';
+    c.innerHTML = `<h4>${l.emoji} ${l.name}</h4><div class="small">ランドマーク (コスト ${l.cost})</div>`;
+    boardEl.appendChild(c);
+  });
+}
+function renderShop(){
+  shopEl.innerHTML='';
+  DATA.buildings.forEach(b=>{
+    const btn = document.createElement('button'); btn.className='btn'; btn.textContent = `${b.emoji} ${b.name} (${b.cost})`;
+    btn.onclick = ()=>{ if(GAME.turn!=='player'){ alert('あなたの番ではありません'); return; } buyBuilding(b.name); };
+    const wrap=document.createElement('div'); wrap.appendChild(btn);
+    shopEl.appendChild(wrap);
+  });
+  DATA.landmarks.forEach(l=>{
+    const btn=document.createElement('button'); btn.className='btn ghost'; btn.textContent = `${l.emoji} ${l.name} (${l.cost})`;
+    btn.onclick = ()=>{ if(GAME.turn!=='player'){ alert('あなたの番ではありません'); return; } buyLandmark(l.key); };
+    const wrap=document.createElement('div'); wrap.appendChild(btn);
+    shopEl.appendChild(wrap);
+  });
+}
+function renderPlayerArea(){
+  playerCoinsEl.textContent = GAME.player.coins;
+  cpuCoinsEl.textContent = GAME.cpu.coins;
+  playerBuildingsEl.innerHTML='';
+  GAME.player.buildings.forEach(b=>{ const t=document.createElement('div'); t.className='buildingTag'; t.textContent = `${b.emoji} ${b.name}`; playerBuildingsEl.appendChild(t); });
+  playerLandmarksEl.innerHTML='';
+  DATA.landmarks.forEach(l=>{ const t=document.createElement('div'); t.className='buildingTag'; t.textContent = `${l.emoji} ${l.name} — ${GAME.player.landmarks[l.key] ? '建設済':'未'}`; playerLandmarksEl.appendChild(t); });
+}
+
+function buyBuilding(name, who='player'){
+  const b = DATA.buildings.find(x=>x.name===name);
+  const actor = who==='player' ? GAME.player : GAME.cpu;
+  if(actor.coins < b.cost) { if(who==='player') alert('コインが足りません'); return false; }
+  actor.coins -= b.cost;
+  actor.buildings.push(Object.assign({}, b));
+  if(who==='player') log(`あなたが ${b.name} を建てた（残 ${actor.coins}）`); else log(`CPU が ${b.name} を建てた（残 ${actor.coins}）`);
+  if(b.name==='駅'){ actor.hasStation=true; } // not used here, station is landmark in our design but kept for compatibility
+  renderPlayerArea();
+  return true;
+}
+
+function buyLandmark(key, who='player'){
+  const l = DATA.landmarks.find(x=>x.key===key);
+  const actor = who==='player' ? GAME.player : GAME.cpu;
+  if(actor.landmarks[key]){ if(who==='player') alert('既に建てています'); return false; }
+  if(actor.coins < l.cost){ if(who==='player') alert('コインが足りません'); return false; }
+  actor.coins -= l.cost;
+  actor.landmarks[key] = true;
+  if(key==='station') actor.hasStation = true;
+  if(who==='player') log(`あなたが ${l.name} を建設した（残 ${actor.coins}）`); else log(`CPU が ${l.name} を建設した（残 ${actor.coins}）`);
+  renderPlayerArea();
+  checkVictory(actor, who);
+  return true;
+}
+
+function parseDiceSpec(spec){
+  const set = new Set();
+  spec.split(',').forEach(p=>{
+    p=p.trim();
+    if(p.includes('-')){ const [a,b]=p.split('-').map(x=>parseInt(x,10)); for(let i=a;i<=b;i++) set.add(i); }
+    else { const v=parseInt(p,10); if(!isNaN(v)) set.add(v); }
+  });
+  return set;
+}
+
+function rollFor(actor){
+  // if actor has station landmark => roll 2d6; station is landmark 'station'
+  if(actor.landmarks['station']){
+    const d1=Math.floor(Math.random()*6)+1; const d2=Math.floor(Math.random()*6)+1;
+    return {roll:d1+d2,pieces:[d1,d2]};
+  } else {
+    const d=Math.floor(Math.random()*6)+1;
+    return {roll:d,pieces:[d]};
+  }
+}
+
+function applyEffects(rollerWho, rollValue){
+  // rollerWho: 'player' or 'cpu'
+  const roller = rollerWho==='player' ? GAME.player : GAME.cpu;
+  DATA.buildings.forEach(b => {
+    const spec = parseDiceSpec(b.dice);
+    if(spec.has(rollValue)){
+      // each player who owns b gets effect
+      [GAME.player,GAME.cpu].forEach(owner=>{
+        owner.buildings.forEach(ob=>{
+          if(ob.name === b.name){ // matching card instance
+            if(b.effect==='bank_gain'){
+              owner.coins += b.value;
+              log(`${owner===GAME.player ? 'あなた' : 'CPU'} の ${b.name} が発動：銀行から ${b.value} コイン獲得`);
+            } else if(b.effect==='steal' || b.effect==='steal_from_roller'){
+              const rollerActor = roller;
+              const amount = Math.min(b.value, rollerActor.coins);
+              rollerActor.coins -= amount;
+              owner.coins += amount;
+              log(`${owner===GAME.player ? 'あなた' : 'CPU'} の ${b.name} が発動：${rollerWho==='player' ? 'あなた' : 'CPU'} から ${amount} コイン奪う`);
+            } else if(b.effect==='gain_from_all'){
+              let total = 0;
+              [GAME.player,GAME.cpu].forEach(p=>{ if(p!==owner){ const give = Math.min(b.value, p.coins); p.coins -= give; total += give; }});
+              owner.coins += total;
+              log(`${owner===GAME.player ? 'あなた' : 'CPU'} の ${b.name} が発動：全員から合計 ${total} コイン獲得`);
+            }
+          }
+        });
+      });
+    }
+  });
+
+  // mall effect: shopping mall adds +1 to food (カフェ, レストラン) when triggered
+  [GAME.player,GAME.cpu].forEach(owner=>{
+    if(owner.landmarks['mall']){
+      owner.buildings.forEach(ob=>{
+        if((ob.name==='カフェ' || ob.name==='レストラン') && parseDiceSpec(ob.dice).has(rollValue)){
+          owner.coins += 1;
+          log(`${owner===GAME.player ? 'あなた' : 'CPU'} の ショッピングモール効果：${ob.name} の効果 +1 コイン`);
+        }
+      });
+    }
+  });
+
+  // city hall: if at turn start actor had 0, they get 1 coin. We'll award at start of turn elsewhere.
+}
+
+function checkVictory(actor, who){
+  const all = DATA.landmarks.every(l => actor.landmarks[l.key]);
+  if(all){
+    setTimeout(()=>{
+      alert((who==='player' ? 'あなた' : 'CPU') + ' の勝利！ゲームをリセットしてください。');
+    }, 50);
+    GAME.running = false;
+    rollBtn.disabled = true;
+    endBtn.disabled = true;
+  }
+}
+
+function startGame(){
+  // reset state
+  GAME.player = {coins:5, buildings:[], landmarks:{}, hasStation:false};
+  GAME.cpu = {coins:5, buildings:[], landmarks:{}, hasStation:false};
+  DATA.landmarks.forEach(l=>{ GAME.player.landmarks[l.key]=false; GAME.cpu.landmarks[l.key]=false; });
+  GAME.turn = 'player'; GAME.running = true;
+  log('ゲーム開始！ あなたとCPUの対戦です。');
+  renderShop(); renderBoard(); renderPlayerArea();
+  rollBtn.disabled = false; endBtn.disabled = false;
+  diceResultEl.textContent='-';
+}
+
+function resetGame(){
+  GAME.running = false;
+  GAME.player = {coins:0, buildings:[], landmarks:{}, hasStation:false};
+  GAME.cpu = {coins:0, buildings:[], landmarks:{}, hasStation:false};
+  DATA.landmarks.forEach(l=>{ GAME.player.landmarks[l.key]=false; GAME.cpu.landmarks[l.key]=false; });
+  renderPlayerArea();
+  log('リセットされました。ゲーム開始を押してください。');
+  rollBtn.disabled = true; endBtn.disabled = true;
+  diceResultEl.textContent='-';
+}
+
+function playerTurnRoll(){
+  if(!GAME.running) return;
+  if(GAME.turn !== 'player') return;
+  // city hall start-of-turn: if coins==0 give 1
+  if(GAME.player.landmarks['town_hall'] && GAME.player.coins===0){ GAME.player.coins+=1; log('市役所効果で1コインを受け取りました'); }
+  const res = rollFor(GAME.player);
+  diceResultEl.textContent = res.pieces.join(' + ') + ' = ' + res.roll;
+  log(`あなたがサイコロを振った: ${res.pieces.join(' + ')} = ${res.roll}`);
+  applyEffects('player', res.roll);
+  renderPlayerArea();
+  // amusement park double check
+  if(res.pieces.length===2 && res.pieces[0]===res.pieces[1] && GAME.player.landmarks['amusement_park']){
+    log('ゾロ目！ 遊園地の効果で追加のターンを得ました。');
+    return; // same player's turn
+  }
+  // after rolling, allow player to buy/build until they press end turn
+}
+
+function endPlayerTurn(){
+  if(!GAME.running) return;
+  GAME.turn = 'cpu';
+  renderPlayerArea();
+  setTimeout(cpuTurn, 600); // small delay for UX
+}
+
+function simpleCpuDecision(){
+  // CPU prioritizes: build landmark if can and missing, else buy best affordable building by heuristic
+  // If can finish all landmarks, do it
+  for(const l of DATA.landmarks){
+    if(!GAME.cpu.landmarks[l.key] && GAME.cpu.coins >= l.cost){
+      return {type:'landmark', key:l.key};
+    }
+  }
+  // else choose building with highest expected value per cost: value/cost heuristic
+  const afford = DATA.buildings.filter(b => b.cost <= GAME.cpu.coins);
+  if(afford.length===0) return {type:'pass'};
+  // heuristic: bank_gain value per cost, steal value also valued; gain_from_all valued by value
+  afford.sort((a,b)=>{
+    const score = s=>{
+      let base = (s.effect==='bank_gain' ? s.value : (s.effect==='gain_from_all' ? s.value*0.6 : (s.effect==='steal' ? s.value*0.9 : 0.5)));
+      return base / s.cost;
+    };
+    return score(b)-score(a);
+  });
+  return {type:'build', name:afford[0].name};
+}
+
+function cpuTurn(){
+  if(!GAME.running) return;
+  // city hall for cpu
+  if(GAME.cpu.landmarks['town_hall'] && GAME.cpu.coins===0){ GAME.cpu.coins+=1; log('CPU：市役所効果で1コイン受け取り'); }
+  log('CPU のターン');
+  const res = rollFor(GAME.cpu);
+  diceResultEl.textContent = res.pieces.join(' + ') + ' = ' + res.roll;
+  log(`CPU がサイコロを振った: ${res.pieces.join(' + ')} = ${res.roll}`);
+  applyEffects('cpu', res.roll);
+  renderPlayerArea();
+  // amusement park extra turn
+  if(res.pieces.length===2 && res.pieces[0]===res.pieces[1] && GAME.cpu.landmarks['amusement_park']){
+    log('CPU：ゾロ目で遊園地効果（追加ターン））');
+    setTimeout(cpuTurn, 800);
+    return;
+  }
+  // decide purchases
+  const decision = simpleCpuDecision();
+  if(decision.type==='landmark'){
+    buyLandmark(decision.key, 'cpu');
+  } else if(decision.type==='build'){
+    buyBuilding(decision.name, 'cpu');
+  } else {
+    log('CPU：今回は何も建てませんでした。');
+  }
+  renderPlayerArea();
+  // check victory
+  checkVictory(GAME.cpu,'cpu');
+  // back to player
+  GAME.turn = 'player';
+  renderPlayerArea();
+}
+
+startBtn.addEventListener('click', ()=>{ startGame(); });
+resetBtn.addEventListener('click', ()=>{ resetGame(); });
+rollBtn.addEventListener('click', ()=>{ playerTurnRoll(); });
+endBtn.addEventListener('click', ()=>{ endPlayerTurn(); });
+
+// initial render
+renderBoard(); renderShop(); renderPlayerArea(); log('ようこそ！「ゲーム開始」を押して対戦を始めてください。');
+
+</script>
+</body>
+</html>
