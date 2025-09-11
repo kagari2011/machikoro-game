@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<title>街ころ - CPU対戦版</title>
+<style>
+  body { font-family: sans-serif; text-align: center; background: #f8f8f8; }
+  h1 { color: #333; }
+  #log { width: 90%; max-width: 600px; margin: 10px auto; height: 200px; overflow-y: auto; border: 1px solid #ccc; padding: 5px; background: #fff; text-align: left; }
+  button { margin: 5px; padding: 10px 20px; }
+</style>
+</head>
+<body>
+<h1>街ころ 🎲 CPU対戦</h1>
+<div>
+  <p>あなたのコイン: <span id="playerCoins">3</span> ｜ CPUのコイン: <span id="cpuCoins">3</span></p>
+  <p>あなたのランドマーク: <span id="playerLM">0</span> / 4 ｜ CPUのランドマーク: <span id="cpuLM">0</span> / 4</p>
+</div>
+<div>
+  <button onclick="playerTurn()">🎲 サイコロを振る</button>
+</div>
+<div id="log"></div>
+
+<script>
+let playerCoins = 3, cpuCoins = 3;
+let playerLM = 0, cpuLM = 0;
+let turn = "player";
+
+function log(msg) {
+  const logDiv = document.getElementById("log");
+  logDiv.innerHTML += msg + "<br>";
+  logDiv.scrollTop = logDiv.scrollHeight;
+}
+
+function updateUI() {
+  document.getElementById("playerCoins").innerText = playerCoins;
+  document.getElementById("cpuCoins").innerText = cpuCoins;
+  document.getElementById("playerLM").innerText = playerLM;
+  document.getElementById("cpuLM").innerText = cpuLM;
+}
+
+function rollDice() {
+  return Math.floor(Math.random() * 6) + 1;
+}
+
+function buildLandmark(player) {
+  if (player === "player" && playerCoins >= 4) {
+    playerCoins -= 4; playerLM++;
+    log("あなたはランドマークを建設しました！");
+  } else if (player === "cpu" && cpuCoins >= 4) {
+    cpuCoins -= 4; cpuLM++;
+    log("CPUはランドマークを建設しました！");
+  }
+}
+
+function checkWin() {
+  if (playerLM >= 4) {
+    log("<b>🎉 あなたの勝ち！</b>");
+    return true;
+  }
+  if (cpuLM >= 4) {
+    log("<b>💻 CPUの勝ち！</b>");
+    return true;
+  }
+  return false;
+}
+
+function playerTurn() {
+  if (turn !== "player") return;
+  const dice = rollDice();
+  log("あなたの出目: " + dice);
+  playerCoins += dice % 2 === 0 ? 2 : 1; // 簡易ルール
+  buildLandmark("player");
+  updateUI();
+  if (checkWin()) return;
+  turn = "cpu";
+  setTimeout(cpuTurn, 1000);
+}
+
+function cpuTurn() {
+  const dice = rollDice();
+  log("CPUの出目: " + dice);
+  cpuCoins += dice % 2 === 0 ? 2 : 1;
+  buildLandmark("cpu");
+  updateUI();
+  if (checkWin()) return;
+  turn = "player";
+  log("👉 あなたのターンです");
+}
+</script>
+</body>
+</html>
